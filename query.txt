@@ -1,1 +1,18 @@
-
+index=* earliest=-7d
+| eval src_ip=coalesce(src_ip,src,client_ip,ip_src,"")
+| eval dest_ip=coalesce(dest_ip,dest,dst,dst_ip,ip_dst,"")
+| eval dest_port=coalesce(dest_port,dpt,dst_port,"")
+| eval search_text=lower(_raw." ".src_ip." ".dest_ip." ".coalesce(user_agent,http_user_agent,"")." ".coalesce(sha256,file_hash,hash,""))
+| rex field=search_text max_match=0 "(?<ioc_ip>(?<![0-9.])(?:134\.199\.154\.64|117\.55\.202\.115|92\.118\.112\.100|150\.251\.112\.208|15\.235\.206\.16|45\.198\.224\.169|176\.65\.132\.128|152\.233\.51\.47|146\.70\.202\.189|185\.5\.70\.233|122\.97\.242\.167|192\.140\.154\.1|47\.238\.232\.123|31\.182\.51\.55|98\.80\.11\.91|200\.119\.44\.50|45\.136\.71\.89|34\.136\.122\.211|77\.237\.246\.73|146\.70\.184\.216|38\.207\.136\.217)(?![0-9.]))"
+| rex field=search_text max_match=0 "(?<ioc_domain>(?:thunder\.godofthunder\.st|hackattackkaboom\.botlesscucks\.st|hik\.gettingheadfromduckysmom\.st|godofthunder\.st))"
+| rex field=search_text max_match=0 "(?<ioc_hash>(?<![a-f0-9])(?:0c5486f06620e26e316f4b33f318b0d646d5e1133789331aa2fed012360d1486|b61a098fc62a2c2696e196dca78da71a|43898a0a53bbd25d31ad9f5018ed3182be98a66109b22c9cab545a9fc447992a|7bc41ed79a9ae909927a9e40701736460a8cb70fca16ce1510e58677aca764b6|7133612558a5d0f257ca6bdb4f765453af9465bc5298acdcf33b5761b8c59aac|17758cf05e3376f8448dff926564e038b763b4a46668455e2ccb5ac0839e629c|dd98bf48899aa385035352688357742c73ddc5e47ec4ecc7d7b74c53c2e3ca3d)(?![a-f0-9]))"
+| rex field=search_text max_match=0 "(?<ioc_pattern>(?:5a3f2e7b8c9d0a6e3b4f7c8a1d5c2b0d6f1a0c3e2d8e4a091c7e5a4d3c2b6a08|kzpubhydnyrdxbjbr6sewvufvd5sc80wmrc8xga2z65=|php\-session\-startup\-rce\-poc|php_session_upload_progress|4a1b00ff2d7c3a1200010305|php2shell\-scan/109618|system\(base64_decode\(|php2shell\-verify/1\.0|php2shell\-test/2\.0\.0|attacksessionid0001|/dev/shm/\.cache\.so|php2shell_exploit|76561198804806015|php2shell\-109618|cve\-2026\-109618|cve\-2026\-109619|leaksessionid01|nucleiboundary|\-\-\-\-b7kqpoc618|php2shell_ok|poc_79fe5e4f|nuclei\-probe|shell_upload|test_beacon|phtml_test|bot\.x86_64|jackalpoc|php5_test|php2shell|dbl_test|p2smark|p2shell|p2smk|-{2,}p2shell|-{2,}p2s[0-9a-f]{0,8}|-{4,}atk))"
+| eval indicator=mvappend(mvmap(ioc_ip,"IP:".ioc_ip),mvmap(ioc_domain,"Domain:".ioc_domain),mvmap(ioc_hash,"Hash:".ioc_hash),mvmap(ioc_pattern,"Pattern:".ioc_pattern))
+| where isnotnull(indicator)
+| eval indicator=mvdedup(indicator)
+| mvexpand indicator
+| rex field=indicator "^(?<kind>[^:]+):(?<ioc>.*)$"
+| eval priority=case(ioc="134.199.154.64" AND dest_ip="134.199.154.64" AND in(tostring(dest_port),"50217","50341","50488","50613","50792","50904","51127","51289","51456","51603","51871","52134","52398","52645"),"critical",kind="Hash" OR in(ioc,"134.199.154.64","117.55.202.115","150.251.112.208","92.118.112.100"),"high",in(ioc,"php_session_upload_progress","godofthunder.st","hik.gettingheadfromduckysmom.st"),"low",1=1,"medium")
+| stats count AS hits min(_time) AS first_seen max(_time) AS last_seen values(src_ip) AS src_ips values(dest_ip) AS dest_ips values(dest_port) AS dest_ports values(sourcetype) AS sourcetypes BY kind ioc priority
+| convert ctime(first_seen) ctime(last_seen)
+| sort - hits
